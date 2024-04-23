@@ -69,8 +69,8 @@ namespace ghost {
   class EnergyAwareScheduler : public BasicDispatchScheduler<EnergyAwareTask> {
   public:
     EnergyAwareScheduler(Enclave* enclave, CpuList cpulist,
-                  std::shared_ptr<TaskAllocator<EnergyAwareTask>> allocator,
-                  int32_t global_cpu, absl::Duration preemption_time_slice);
+                         std::shared_ptr<TaskAllocator<EnergyAwareTask>> allocator,
+                         int32_t global_cpu, absl::Duration preemption_time_slice);
     ~EnergyAwareScheduler();
 
     void EnclaveReady();

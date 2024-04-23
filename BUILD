@@ -747,6 +747,38 @@ cc_library(
 )
 
 cc_binary(
+    name = "energy_aware_centralized_agent",
+    srcs = [
+        "schedulers/energy_aware/centralized/energy_aware_agent.cc",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":agent",
+        ":energy_aware_centralized_scheduler",
+        ":topology",
+        "@com_google_absl//absl/debugging:symbolize",
+        "@com_google_absl//absl/flags:parse",
+    ],
+)
+
+cc_library(
+    name = "energy_aware_centralized_scheduler",
+    srcs = [
+        "schedulers/energy_aware/centralized/energy_aware_scheduler.cc",
+        "schedulers/energy_aware/centralized/energy_aware_scheduler.h",
+    ],
+    hdrs = [
+        "schedulers/energy_aware/centralized/energy_aware_scheduler.h",
+    ],
+    copts = compiler_flags,
+    deps = [
+        ":agent",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
     name = "agent_flux",
     srcs = [
         "schedulers/flux/agent_flux.cc",
