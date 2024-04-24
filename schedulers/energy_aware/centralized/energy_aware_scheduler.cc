@@ -5,6 +5,10 @@
 #include "absl/strings/str_format.h"
 
 namespace ghost {
+  void debugTask(char *msg, EnergyAwareTask *task) {
+    printf("%s %d: %s\n", msg, task->gtid.tgid(), absl::FormatTime(MonotonicNow(), absl::LocalTimeZone()).c_str());
+  }
+
   void EnergyAwareScheduler::CpuNotIdle(const ghost::Message &msg) { CHECK(0); }
 
   void EnergyAwareScheduler::CpuTimerExpired(const ghost::Message &msg) { CHECK(0); }
@@ -87,6 +91,8 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskNew(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskNew", task);
+
     const ghost_msg_payload_task_new* payload =
         static_cast<const ghost_msg_payload_task_new*>(msg.payload());
 
@@ -103,6 +109,7 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskRunnable(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskRunnable", task);
     const ghost_msg_payload_task_wakeup* payload =
         static_cast<const ghost_msg_payload_task_wakeup*>(msg.payload());
 
@@ -114,6 +121,8 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskDeparted(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskDeparted", task);
+
     if (task->yielding()) {
       Unyield(task);
     }
@@ -133,12 +142,14 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskDead(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskDead", task);
     CHECK_EQ(task->run_state, EnergyAwareTask::RunState::kBlocked);
     allocator()->FreeTask(task);
     num_tasks_--;
   }
 
   void EnergyAwareScheduler::TaskBlocked(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskBlocked", task);
     if (task->oncpu()) {
       CpuState* cs = cpu_state_of(task);
       CHECK_EQ(cs->current, task);
@@ -152,6 +163,8 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskPreempted(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskPreempted", task);
+    printf("Timeslice %s\n", absl::FormatDuration(preemption_time_slice_).c_str());
     task->preempted = true;
 
     if (task->oncpu()) {
@@ -166,6 +179,7 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskYield(EnergyAwareTask* task, const Message& msg) {
+    debugTask("TaskYield", task);
     if (task->oncpu()) {
       CpuState* cs = cpu_state_of(task);
       CHECK_EQ(cs->current, task);
@@ -197,13 +211,16 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::Enqueue(EnergyAwareTask* task) {
+    debugTask("Enqueue", task);
+
     CHECK_EQ(task->run_state, EnergyAwareTask::RunState::kRunnable);
     task->run_state = EnergyAwareTask::RunState::kQueued;
-    if (task->prio_boost || task->preempted) {
-      run_queue_.push_front(task);
-    } else {
-      run_queue_.push_back(task);
-    }
+//    if (task->prio_boost || task->preempted) {
+//    if (task->prio_boost) {
+//      run_queue_.push_front(task);
+//    } else {
+    run_queue_.push_back(task);
+//    }
   }
 
   EnergyAwareTask* EnergyAwareScheduler::Dequeue() {
@@ -216,10 +233,13 @@ namespace ghost {
     task->run_state = EnergyAwareTask::RunState::kRunnable;
     run_queue_.pop_front();
 
+    debugTask("Dequeue", task);
+
     return task;
   }
 
   void EnergyAwareScheduler::RemoveFromRunqueue(EnergyAwareTask* task) {
+    debugTask("RemoveFromRunqueue", task);
     CHECK(task->queued());
 
     for (int pos = run_queue_.size() - 1; pos >= 0; pos--) {
@@ -238,6 +258,7 @@ namespace ghost {
   }
 
   void EnergyAwareScheduler::TaskOnCpu(EnergyAwareTask* task, const Cpu& cpu) {
+    debugTask("TaskOnCpu", task);
     CpuState* cs = cpu_state(cpu);
     CHECK_EQ(task, cs->current);
 
@@ -269,6 +290,7 @@ namespace ghost {
       }
       if (cs->current &&
           (MonotonicNow() - cs->last_commit) < preemption_time_slice_) {
+        printf("Dont schedule another task\n");
         // This CPU is currently running a task, so do not schedule a different
         // task on it.
         continue;
@@ -279,6 +301,7 @@ namespace ghost {
 
     while (!available.Empty()) {
       EnergyAwareTask* next = Dequeue();
+
       if (!next) {
         break;
       }
