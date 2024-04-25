@@ -4,7 +4,19 @@
 
 #include "absl/strings/str_format.h"
 
+
 namespace ghost {
+    double generateEnergyReading(EnergyAwareTask *task) {
+        switch (task->energyConsumption) {
+            case EnergyAwareTask::HIGH:
+                return 100;
+            case EnergyAwareTask::MEDIUM:
+                return 10;
+            case EnergyAwareTask::LOW:
+                return 1;
+        }
+    }
+
   void debugTask(char *msg, EnergyAwareTask *task) {
     printf("%s %d: %s\n", msg, task->gtid.tgid(), absl::FormatTime(MonotonicNow(), absl::LocalTimeZone()).c_str());
   }
@@ -98,6 +110,14 @@ namespace ghost {
 
     task->seqnum = msg.seqnum();
     task->run_state = EnergyAwareTask::RunState::kBlocked;
+
+    if (num_tasks_ % 3 == 1) {
+        task->energyConsumption = EnergyAwareTask::HIGH;
+    } else if (num_tasks_ % 3 == 2) {
+        task->energyConsumption = EnergyAwareTask::MEDIUM;
+    } else {
+        task->energyConsumption = EnergyAwareTask::LOW;
+    }
 
     const Gtid gtid(payload->gtid);
     if (payload->runnable) {
@@ -224,18 +244,28 @@ namespace ghost {
   }
 
   EnergyAwareTask* EnergyAwareScheduler::Dequeue() {
-    if (RunqueueEmpty()) {
-      return nullptr;
-    }
+      if (RunqueueEmpty()) {
+          return nullptr;
+      }
 
-    EnergyAwareTask* task = run_queue_.front();
-    CHECK_EQ(task->run_state, EnergyAwareTask::RunState::kQueued);
-    task->run_state = EnergyAwareTask::RunState::kRunnable;
-    run_queue_.pop_front();
+      EnergyAwareTask *minEnergyTask = run_queue_[0];
+      int pos = 0;
 
-    debugTask("Dequeue", task);
+      for (int i = 1; i < run_queue_.size(); i++) {
+          if (run_queue_[i]->lastEnergyReading < minEnergyTask->lastEnergyReading) {
+              minEnergyTask = run_queue_[i];
+              pos = i;
+          }
+      }
 
-    return task;
+    debugTask("Dequeue", minEnergyTask);
+    printf("Energy value: %f\n", minEnergyTask->lastEnergyReading);
+
+    CHECK_EQ(minEnergyTask->run_state, EnergyAwareTask::RunState::kQueued);
+    minEnergyTask->run_state = EnergyAwareTask::RunState::kRunnable;
+    run_queue_.erase(run_queue_.cbegin() + pos);
+
+    return minEnergyTask;
   }
 
   void EnergyAwareScheduler::RemoveFromRunqueue(EnergyAwareTask* task) {
@@ -259,6 +289,7 @@ namespace ghost {
 
   void EnergyAwareScheduler::TaskOnCpu(EnergyAwareTask* task, const Cpu& cpu) {
     debugTask("TaskOnCpu", task);
+    printf("Task assigned to CPU id %d\n", cpu.id());
     CpuState* cs = cpu_state(cpu);
     CHECK_EQ(task, cs->current);
 
@@ -288,6 +319,11 @@ namespace ghost {
         // This CPU is running a higher priority sched class, such as CFS.
         continue;
       }
+
+      if (cs->current) {
+          cs->current->lastEnergyReading = generateEnergyReading(cs->current);
+      }
+
       if (cs->current &&
           (MonotonicNow() - cs->last_commit) < preemption_time_slice_) {
         printf("Dont schedule another task\n");
@@ -297,6 +333,10 @@ namespace ghost {
       }
       // No task is running on this CPU, so designate this CPU as available.
       available.Set(cpu);
+    }
+
+    for (int i = 0; i < run_queue_.size(); i++) {
+        run_queue_[i]->lastEnergyReading = generateEnergyReading(run_queue_[i]);
     }
 
     while (!available.Empty()) {
@@ -351,6 +391,7 @@ namespace ghost {
       }
     }
     for (const Cpu& next_cpu : assigned) {
+        printf("Next CPU id %d\n", next_cpu.id());
       CpuState* cs = cpu_state(next_cpu);
       RunRequest* req = enclave()->GetRunRequest(next_cpu);
       if (req->succeeded()) {

@@ -64,6 +64,10 @@ namespace ghost {
     // Whether the last execution was preempted or not.
     bool preempted = false;
     bool prio_boost = false;
+
+    double lastEnergyReading;
+
+    enum energyConsumptionLevel { LOW, MEDIUM, HIGH } energyConsumption;
   };
 
   class EnergyAwareScheduler : public BasicDispatchScheduler<EnergyAwareTask> {
